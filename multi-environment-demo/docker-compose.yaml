@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  thunder:
+    image: thunder:latest
+    container_name: thunder-${ENV:-dev}
+    ports:
+      - "${PORT:-8090}:${PORT:-8090}"
+    environment:
+      - PORT=${PORT:-8090}
+      - DB_TYPE=${DB_TYPE:-sqlite}
+      - DB_PATH=${DB_PATH:-/app/data/thunder.db}
+      - IMMUTABLE_ENABLED=${IMMUTABLE_ENABLED:-false}
+      - IMMUTABLE_APPS_PATH=${IMMUTABLE_APPS_PATH:-/opt/thunder/repository/conf/immutable_resources/applications}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - THUNDER_SKIP_SECURITY=true
+    env_file:
+      - environments/${ENV:-dev}.env
+    volumes:
+      # Deployment configuration
+      - ./deployment.yaml:/opt/thunder/repository/conf/deployment.yaml:ro
+      
+      # Database (for dev environment)
+      - thunder-data-${ENV:-dev}:/app/data
+      
+      # Immutable configurations (for prod environment)
+      - ./configs:/opt/thunder/repository/conf/immutable_resources:ro
+    networks:
+      - thunder-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8090}/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  thunder-network:
+    driver: bridge
+
+volumes:
+  thunder-data-dev:
+  thunder-data-prod:
