@@ -1,10 +1,6 @@
-# Thunder Deployment Configuration
-# This file configures how Thunder loads resources
-
 server:
-  hostname: "0.0.0.0"
-  public_hostname: "https://localhost:8091"
-  port: 8091
+  hostname: "localhost"
+  port: 8090
 
 security:
   cert_file: "repository/resources/security/server.cert"
@@ -31,9 +27,7 @@ database:
 cors:
   allowed_origins:
     - "https://localhost:3000"
-
-immutable_resources:
-  enabled: true
+    - "http://localhost:3000"
 
 observability:
   enabled: false
@@ -43,3 +37,7 @@ observability:
   metrics:
     enabled: false
   failure_mode: "graceful"
+
+# Immutable Resources Configuration - DISABLED for dev
+immutable_resources:
+  enabled: false

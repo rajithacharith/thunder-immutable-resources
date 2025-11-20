@@ -17,8 +17,8 @@ services:
     env_file:
       - environments/${ENV:-dev}.env
     volumes:
-      # Deployment configuration
-      - ./deployment.yaml:/opt/thunder/repository/conf/deployment.yaml:ro
+      # Deployment configuration (uses deployment-dev.yaml or deployment-prod.yaml)
+      - ./environments/deployment-${ENV:-dev}.yaml:/opt/thunder/repository/conf/deployment.yaml:ro
       
       # Database (for dev environment)
       - thunder-data-${ENV:-dev}:/app/data
@@ -28,11 +28,40 @@ services:
     networks:
       - thunder-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8090}/healthz"]
+      test: ["CMD", "curl", "-k", "https://localhost:${PORT:-8090}/health/readiness"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 10s
+
+  sample-app:
+    image: thunder-oauth-sample:latest
+    container_name: sample-app-${ENV:-dev}
+    ports:
+      - "${SAMPLE_APP_PORT:-3000}:${SAMPLE_APP_PORT:-3000}"
+    environment:
+      - PORT=${SAMPLE_APP_PORT:-3000}
+      - NODE_ENV=production
+      - APP_ID=${APP_ID}
+      - FLOW_ENDPOINT=${FLOW_ENDPOINT}
+      - APPLICATIONS_ENDPOINT=${APPLICATIONS_ENDPOINT}
+      - AUTHORIZATION_ENDPOINT=${AUTHORIZATION_ENDPOINT}
+      - TOKEN_ENDPOINT=${TOKEN_ENDPOINT}
+      - REDIRECT_URI=${REDIRECT_URI}
+    volumes:
+      - ./environments/runtime-${ENV:-dev}.json:/app/app/runtime.json:ro
+    entrypoint: ["node", "server.js"]
+    networks:
+      - thunder-network
+    depends_on:
+      thunder:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
   thunder-network:
