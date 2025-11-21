@@ -55,7 +55,7 @@ sleep 15
 # Check health
 echo ""
 echo "🏥 Checking service health..."
-if curl -sf http://localhost:8091/healthz > /dev/null 2>&1; then
+if curl -sf http://localhost:8091/health/readiness > /dev/null 2>&1; then
     echo "✅ Thunder Server is healthy"
 else
     echo "❌ Thunder Server is not responding"
