@@ -3,8 +3,8 @@
 echo "🔄 Restarting Sample App Container..."
 echo ""
 
-# Recreate the sample app container
-ENV=dev docker-compose up -d --force-recreate sample-app
+# Recreate only the sample-app service using docker-compose
+ENV=dev docker-compose -p thunder-dev up -d sample-app
 
 echo ""
 echo "⏳ Waiting for container to start..."

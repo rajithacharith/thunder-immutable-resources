@@ -16,8 +16,54 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+log_info() {
+    echo "ℹ️  $1"
+}
+
+log_success() {
+    echo "✅ $1"
+}
+
+log_warning() {
+    echo "⚠️  $1"
+}
+
+log_error() {
+    echo "❌ $1"
+}
+
+thunder_api_call() {
+    local METHOD=$1
+    local ENDPOINT=$2
+    local DATA=${3:-""}
+    
+    if [[ -z "$DATA" ]]; then
+        curl -k -s -w "\n%{http_code}" -X "$METHOD" \
+            "https://localhost:8091${ENDPOINT}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json"
+    else
+        curl -k -s -w "\n%{http_code}" -X "$METHOD" \
+            "http://localhost:8091${ENDPOINT}" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            -d "$DATA"
+    fi
+}
+
+# ============================================================================
+# Start Production Environment
+# ============================================================================
+
 echo "🚀 Starting Production Environment..."
 echo ""
+
+# Track if containers are being restarted (to skip resource creation)
+IS_RESTART=false
 
 # Load environment variables from prod.env
 source environments/prod.env
@@ -43,6 +89,7 @@ if docker ps | grep -q "thunder-prod\|sample-app-prod"; then
         exit 0
     fi
     echo "🔄 Restarting production environment..."
+    IS_RESTART=true
 fi
 
 # Start prod environment
@@ -55,19 +102,209 @@ sleep 15
 # Check health
 echo ""
 echo "🏥 Checking service health..."
-if curl -sf http://localhost:8091/health/readiness > /dev/null 2>&1; then
+if curl -k https://localhost:8091/health/readiness > /dev/null 2>&1; then
     echo "✅ Thunder Server is healthy"
 else
     echo "❌ Thunder Server is not responding"
 fi
 
-if curl -sf http://localhost:3001 > /dev/null 2>&1; then
+if curl -k https://localhost:3001 > /dev/null 2>&1; then
     echo "✅ Sample App is healthy"
 else
     echo "❌ Sample App is not responding"
 fi
 
 echo ""
+
+# Only create resources if this is a fresh start (not a restart)
+if [ "$IS_RESTART" = false ]; then
+
+# ============================================================================
+# Create Default Organization Unit
+# ============================================================================
+
+log_info "Creating default organization unit..."
+
+RESPONSE=$(thunder_api_call POST "/organization-units" '{
+  "handle": "default",
+  "name": "Default",
+  "description": "Default organization unit"
+}')
+
+HTTP_CODE="${RESPONSE: -3}"
+BODY="${RESPONSE%???}"
+
+if [[ "$HTTP_CODE" == "201" ]] || [[ "$HTTP_CODE" == "200" ]]; then
+    log_success "Organization unit created successfully"
+    DEFAULT_OU_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [[ -n "$DEFAULT_OU_ID" ]]; then
+        log_info "Default OU ID: $DEFAULT_OU_ID"
+    else
+        log_error "Could not extract OU ID from response"
+        exit 1
+    fi
+elif [[ "$HTTP_CODE" == "409" ]]; then
+    log_warning "Organization unit already exists, retrieving OU ID..."
+    # Get existing OU ID
+    RESPONSE=$(thunder_api_call GET "/organization-units")
+    HTTP_CODE="${RESPONSE: -3}"
+    BODY="${RESPONSE%???}"
+
+    if [[ "$HTTP_CODE" == "200" ]]; then
+        DEFAULT_OU_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        if [[ -n "$DEFAULT_OU_ID" ]]; then
+            log_success "Found OU ID: $DEFAULT_OU_ID"
+        else
+            log_error "Could not find OU ID in response"
+            exit 1
+        fi
+    else
+        log_error "Failed to fetch organization units (HTTP $HTTP_CODE)"
+        exit 1
+    fi
+else
+    log_error "Failed to create organization unit (HTTP $HTTP_CODE)"
+    echo "Response: $BODY"
+    exit 1
+fi
+
+echo ""
+
+# ============================================================================
+# Create User Schema
+# ============================================================================
+
+log_info "Creating user schema 'Person'..."
+
+RESPONSE=$(thunder_api_call POST "/user-schemas" '{
+  "name": "Person",
+  "ouId": "'${DEFAULT_OU_ID}'",
+  "schema": {
+    "username": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "email": {
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "email_verified": {
+      "type": "boolean",
+      "required": false
+    },
+    "given_name": {
+      "type": "string",
+      "required": false
+    },
+    "family_name": {
+      "type": "string",
+      "required": false
+    },
+    "phone_number": {
+      "type": "string",
+      "required": false
+    },
+    "phone_number_verified": {
+      "type": "boolean",
+      "required": false
+    }
+  }
+}')
+
+HTTP_CODE="${RESPONSE: -3}"
+
+if [[ "$HTTP_CODE" == "201" ]] || [[ "$HTTP_CODE" == "200" ]]; then
+    log_success "User schema created successfully"
+elif [[ "$HTTP_CODE" == "409" ]]; then
+    log_warning "User schema already exists, skipping"
+else
+    log_error "Failed to create user schema (HTTP $HTTP_CODE)"
+    exit 1
+fi
+
+echo ""
+
+# ============================================================================
+# Create Admin User
+# ============================================================================
+
+log_info "Creating admin user..."
+
+RESPONSE=$(thunder_api_call POST "/users" '{
+  "type": "Person",
+  "organizationUnit": "'${DEFAULT_OU_ID}'",
+  "attributes": {
+    "username": "admin",
+    "password": "admin",
+    "sub": "admin",
+    "email": "admin@thunder.dev",
+    "email_verified": true,
+    "name": "Administrator",
+    "given_name": "Admin",
+    "family_name": "User",
+    "picture": "https://example.com/avatar.jpg",
+    "phone_number": "+12345678920",
+    "phone_number_verified": true
+  }
+}')
+
+HTTP_CODE="${RESPONSE: -3}"
+BODY="${RESPONSE%???}"
+
+if [[ "$HTTP_CODE" == "201" ]] || [[ "$HTTP_CODE" == "200" ]]; then
+    log_success "Admin user created successfully"
+    log_info "Username: admin"
+    log_info "Password: admin"
+
+    # Extract admin user ID
+    ADMIN_USER_ID=$(echo "$BODY" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [[ -z "$ADMIN_USER_ID" ]]; then
+        log_warning "Could not extract admin user ID from response"
+    else
+        log_info "Admin user ID: $ADMIN_USER_ID"
+    fi
+elif [[ "$HTTP_CODE" == "409" ]]; then
+    log_warning "Admin user already exists, retrieving user ID..."
+
+    # Get existing admin user ID
+    RESPONSE=$(thunder_api_call GET "/users")
+    HTTP_CODE="${RESPONSE: -3}"
+    BODY="${RESPONSE%???}"
+
+    if [[ "$HTTP_CODE" == "200" ]]; then
+        # Parse JSON to find admin user
+        ADMIN_USER_ID=$(echo "$BODY" | grep -o '"id":"[^"]*","[^"]*":"[^"]*","attributes":{[^}]*"username":"admin"' | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+
+        # Fallback parsing
+        if [[ -z "$ADMIN_USER_ID" ]]; then
+            ADMIN_USER_ID=$(echo "$BODY" | sed 's/},{/}\n{/g' | grep '"username":"admin"' | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        fi
+
+        if [[ -n "$ADMIN_USER_ID" ]]; then
+            log_success "Found admin user ID: $ADMIN_USER_ID"
+        else
+            log_error "Could not find admin user in response"
+            exit 1
+        fi
+    else
+        log_error "Failed to fetch users (HTTP $HTTP_CODE)"
+        exit 1
+    fi
+else
+    log_error "Failed to create admin user (HTTP $HTTP_CODE)"
+    echo "Response: $BODY"
+    exit 1
+fi
+
+echo ""
+
+else
+    log_info "Skipping resource creation (containers restarted)"
+    echo ""
+fi
+
 echo "🎉 Production environment is ready!"
 echo ""
 echo "📍 Access points:"
