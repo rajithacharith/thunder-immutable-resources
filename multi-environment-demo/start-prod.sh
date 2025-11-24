@@ -48,7 +48,7 @@ thunder_api_call() {
             -H "Accept: application/json"
     else
         curl -k -s -w "\n%{http_code}" -X "$METHOD" \
-            "http://localhost:8091${ENDPOINT}" \
+            "https://localhost:8091${ENDPOINT}" \
             -H "Content-Type: application/json" \
             -H "Accept: application/json" \
             -d "$DATA"
@@ -308,7 +308,7 @@ fi
 echo "🎉 Production environment is ready!"
 echo ""
 echo "📍 Access points:"
-echo "   - Thunder Server: http://localhost:8091"
+echo "   - Thunder Server: https://localhost:8091"
 echo "   - Sample App:     https://localhost:3001"
 echo ""
 echo "📚 Verify immutable configuration:"
