@@ -10,7 +10,7 @@ PRODUCT_REPO_PATH="$PWD"
 TEMP_DIR="$PRODUCT_REPO_PATH/wso2-setup-temp"
 CONFIG_REPO_PATH="$TEMP_DIR"
 THUNDER_API_BASE="https://localhost:8090"
-ZIP_URL="https://github.com/rajithacharith/thunder-immutable-resources/releases/download/v0.0.4/wso2-cloud-setup-resources.zip"
+ZIP_URL="https://github.com/rajithacharith/thunder-immutable-resources/releases/download/v0.0.5/wso2-cloud-setup-resources.zip"
 
 # Required environment variables
 export GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-<your-google-client-id>}"
@@ -43,41 +43,36 @@ fi
 
 # --- REMOVE EXISTING DIRECTORIES ---
 echo "Removing existing immutable_resources directory..."
-rm -rf "$PRODUCT_REPO_PATH/backend/cmd/server/repository/conf/immutable_resources"
+rm -rf "$PRODUCT_REPO_PATH/repository/conf/immutable_resources"
 
 echo "Removing existing graphs directory..."
-rm -rf "$PRODUCT_REPO_PATH/backend/cmd/server/repository/resources/graphs"
+rm -rf "$PRODUCT_REPO_PATH/repository/resources/graphs"
 
 # --- COPY FILES ---
-echo "Copying immutable resources..."
-mkdir -p "$PRODUCT_REPO_PATH/backend/cmd/server/repository/conf"
+echo "Copying graphs..."
+
+echo "Updating immutable_resources and graphs from config repo (zip)..."
 if [ -d "$CONFIG_REPO_PATH/immutable_resources" ]; then
-    cp -r "$CONFIG_REPO_PATH/immutable_resources" "$PRODUCT_REPO_PATH/backend/cmd/server/repository/conf/"
+    rm -rf "$PRODUCT_REPO_PATH/repository/conf/immutable_resources"
+    mkdir -p "$PRODUCT_REPO_PATH/repository/conf"
+    cp -r "$CONFIG_REPO_PATH/immutable_resources" "$PRODUCT_REPO_PATH/repository/conf/"
 else
     echo "Warning: immutable_resources directory not found in $CONFIG_REPO_PATH"
 fi
-
-echo "Copying graphs..."
-mkdir -p "$PRODUCT_REPO_PATH/backend/cmd/server/repository/resources"
 if [ -d "$CONFIG_REPO_PATH/graphs" ]; then
-    cp -r "$CONFIG_REPO_PATH/graphs" "$PRODUCT_REPO_PATH/backend/cmd/server/repository/resources/"
+    rm -rf "$PRODUCT_REPO_PATH/repository/resources/graphs"
+    mkdir -p "$PRODUCT_REPO_PATH/repository/resources"
+    cp -r "$CONFIG_REPO_PATH/graphs" "$PRODUCT_REPO_PATH/repository/resources/"
 else
     echo "Warning: graphs directory not found in $CONFIG_REPO_PATH"
-fi
-
-echo "Copying Makefile and build.sh..."
-if [ -f "$CONFIG_REPO_PATH/Makefile" ]; then
-    cp "$CONFIG_REPO_PATH/Makefile" "$PRODUCT_REPO_PATH/"
-fi
-if [ -f "$CONFIG_REPO_PATH/build.sh" ]; then
-    cp "$CONFIG_REPO_PATH/build.sh" "$PRODUCT_REPO_PATH/"
 fi
 
 # --- RUN PRODUCT WITHOUT DEPLOYMENT.TOML ---
 echo "Running Thunder with THUNDER_SKIP_SECURITY=true (no deployment.toml)..."
 cd "$PRODUCT_REPO_PATH"
+
 export THUNDER_SKIP_SECURITY=true
-make run_backend &
+./start.sh &
 
 THUNDER_PID=$!
 sleep 10 # Wait for Thunder to start
@@ -121,33 +116,46 @@ fi
 
 echo "Default OU ID: $DEFAULT_OU_ID"
 
-# --- UPDATE OU ID IN customer.yaml ---
-CUSTOMER_YAML="$CONFIG_REPO_PATH/immutable_resources/user-schemas/customer.yaml"
-if [ -f "$CUSTOMER_YAML" ]; then
-    echo "Updating organization_unit_id in customer.yaml to $DEFAULT_OU_ID"
-    sed -i.bak "s/^organization_unit_id: .*/organization_unit_id: $DEFAULT_OU_ID/" "$CUSTOMER_YAML"
+# --- UPDATE USER SCHEMA WITH DEFAULT OU ID ---
+echo "Updating user schema with default OU ID..."
+if [ -f "$PRODUCT_REPO_PATH/repository/conf/immutable_resources/user_schemas/customer.yaml" ]; then
+    sed -i.bak "s/organization_unit_id: .*/organization_unit_id: $DEFAULT_OU_ID/" "$PRODUCT_REPO_PATH/repository/conf/immutable_resources/user_schemas/customer.yaml"
+    rm -f "$PRODUCT_REPO_PATH/repository/conf/immutable_resources/user_schemas/customer.yaml.bak"
+    echo "User schema updated with OU ID: $DEFAULT_OU_ID"
 else
-    echo "Warning: customer.yaml not found at $CUSTOMER_YAML"
+    echo "Warning: customer.yaml not found"
 fi
 
 # --- STOP THUNDER ---
 echo "Stopping Thunder..."
+echo "Killing Thunder process with PID $THUNDER_PID"
 kill $THUNDER_PID
-sleep 5
+sleep 10
 
-echo "Copying deployment.yaml..."
-mkdir -p "$PRODUCT_REPO_PATH/backend/cmd/server/repository/conf"
+echo "Overwriting deployment.yaml with zip version if present..."
 if [ -f "$CONFIG_REPO_PATH/deployment.yaml" ]; then
-    cp "$CONFIG_REPO_PATH/deployment.yaml" "$PRODUCT_REPO_PATH/backend/cmd/server/repository/conf/"
+    cp "$CONFIG_REPO_PATH/deployment.yaml" "$PRODUCT_REPO_PATH/repository/conf/deployment.yaml"
+    echo "deployment.yaml updated from config repo."
 else
-    echo "Warning: deployment.yaml not found in $CONFIG_REPO_PATH"
+    echo "Warning: deployment.yaml not found in config repo."
 fi
 
+# --- KILL PROCESSES ON PORTS 8090, 5190, 5191 ---
+echo "Checking and killing processes on ports 8090, 5190, 5191..."
+for port in 8090 5190 5191; do
+    PID=$(lsof -ti:$port 2>/dev/null || true)
+    if [ -n "$PID" ]; then
+        echo "Killing process on port $port (PID: $PID)"
+        kill $PID 2>/dev/null || true
+        sleep 2
+    else
+        echo "No process found on port $port"
+    fi
+done
 
 # --- RUN PRODUCT WITH DEPLOYMENT.TOML AND SKIP DEFAULT RESOURCES ---
-echo "Running Thunder with SKIP_DEFAULT_RESOURCES=true..."
-export SKIP_DEFAULT_RESOURCES=true
-make run
+echo "Running Thunder"
+./start.sh 
 
 # --- CLEANUP ---
 echo "Cleaning up temporary directory..."

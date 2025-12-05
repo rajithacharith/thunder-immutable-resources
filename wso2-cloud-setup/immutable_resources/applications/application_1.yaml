@@ -16,6 +16,8 @@ inbound_auth_config:
       redirect_uris:
         - "https://localhost:5191/develop"
         - "https://localhost:5190/gate/signin"
+        - "https://localhost:8090/develop"
+        - "https://localhost:8090/gate/signin"
         - "https://localhost:3001"
       grant_types:
         - "authorization_code"
