@@ -39,8 +39,5 @@ cors:
     - "https://localhost:5190"
     - "https://localhost:5191"
 
-gate_client:
-  port: 5190
-
 immutable_resources:
   enabled: true
