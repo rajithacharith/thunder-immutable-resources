@@ -1,0 +1,152 @@
+{
+    "id": "auth_flow_config_wso2_cloud",
+    "type": "AUTHENTICATION",
+    "nodes": [
+        {
+            "id": "choose_auth",
+            "type": "DECISION",
+            "next": [
+                "google_auth",
+                "github_auth"
+            ]
+        },
+        {
+            "id": "google_auth",
+            "type": "TASK_EXECUTION",
+            "properties": {
+                "idpId": "456efc02-bad3-47bb-bd87-01cc94f8388c",
+                "allowAuthenticationWithoutLocalUser": true
+            },
+            "executor": {
+                "name": "GoogleOIDCAuthExecutor"
+            },
+            "next": [
+                "ou_creation"
+            ]
+        },
+        {
+            "id": "github_auth",
+            "type": "TASK_EXECUTION",
+            "properties": {
+                "idpId": "372a20db-a946-4b40-add0-0049d15a5f9c",
+                "allowAuthenticationWithoutLocalUser": true
+            },
+            "executor": {
+                "name": "GithubOAuthExecutor"
+            },
+            "next": [
+                "ou_creation"
+            ]
+        },
+        {
+            "id": "ou_creation",
+            "type": "TASK_EXECUTION",
+            "condition": {
+                "key": "{{ context.userEligibleForProvisioning }}",
+                "value": "true"
+            },
+            "executor": {
+                "name": "OUExecutor"
+            },
+            "next": [
+                "publish_ou_creation_event"
+            ]
+        },
+        {
+            "id": "publish_ou_creation_event",
+            "type": "TASK_EXECUTION",
+            "condition": {
+                "key": "{{ context.userEligibleForProvisioning }}",
+                "value": "true"
+            },
+            "properties": {
+                "url": "https://webhook.site/b5335e9e-10b3-41d7-a34d-815f3fad6886",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "body": {
+                    "event": "OU_CREATED",
+                    "ouName": "{{ context.ouName }}",
+                    "ouId": "{{ context.ouId }}",
+                    "ouHandle": "{{ context.ouHandle }}"
+                },
+                "timeout": 5
+            },
+            "executor": {
+                "name": "HTTPRequestExecutor"
+            },
+            "next": [
+                "provisioning"
+            ]
+        },
+        {
+            "id": "provisioning",
+            "type": "TASK_EXECUTION",
+            "condition": {
+                "key": "{{ context.userEligibleForProvisioning }}",
+                "value": "true"
+            },
+            "executor": {
+                "name": "ProvisioningExecutor"
+            },
+            "next": [
+                "publish_user_creation_event"
+            ]
+        },
+        {
+            "id": "publish_user_creation_event",
+            "type": "TASK_EXECUTION",
+            "condition": {
+                "key": "{{ context.userAutoProvisioned }}",
+                "value": "true"
+            },
+            "properties": {
+                "url": "https://webhook.site/b5335e9e-10b3-41d7-a34d-815f3fad6886",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "body": {
+                    "event": "USER_CREATED",
+                    "userId": "{{ context.userID }}",
+                    "email": "{{ context.email }}"
+                },
+                "timeout": 5
+            },
+            "executor": {
+                "name": "HTTPRequestExecutor"
+            },
+            "next": [
+                "publish_login_event"
+            ]
+        },
+        {
+            "id": "publish_login_event",
+            "type": "TASK_EXECUTION",
+            "properties": {
+                "url": "https://webhook.site/b5335e9e-10b3-41d7-a34d-815f3fad6886",
+                "method": "POST",
+                "headers": {
+                    "Content-Type": "application/json"
+                },
+                "body": {
+                    "event": "USER_LOGGED_IN",
+                    "userId": "{{ context.userID }}",
+                    "email": "{{ context.email }}"
+                },
+                "timeout": 5
+            },
+            "executor": {
+                "name": "HTTPRequestExecutor"
+            },
+            "next": [
+                "authenticated"
+            ]
+        },
+        {
+            "id": "authenticated",
+            "type": "AUTHENTICATION_SUCCESS"
+        }
+    ]
+}
