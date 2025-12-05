@@ -22,7 +22,7 @@ inbound_auth_config:
       response_types:
         - "code"
       token_endpoint_auth_method: "none"
-      pkce_required: false
+      pkce_required: true
       public_client: true
       token:
         issuer: "https://localhost:8090/oauth2/token"
